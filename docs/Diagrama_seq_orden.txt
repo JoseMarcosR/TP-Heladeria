@@ -1,0 +1,51 @@
+Etapa A — Autenticación y Alta de Pedidos (FUN-01 / RN-01)
+Admin -> KC: POST /protocol/openid-connect/token (grant_type=password, usuario admin).
+KC --> Admin: Devuelve el JWT firmado con el rol Administrador adentro de realm_access.roles.
+Admin -> GW: POST /v1/pedidos enviando {idHeladeria, cantidadTachos} y el header Authorization: Bearer <JWT>.
+GW -> GW: El Gateway valida la firma del JWT contra Keycloak y verifica que tenga el rol Administrador.
+GW -> MSP: El Gateway enruta la petición por HTTP hacia ms-pedidos (:8082/v1/pedidos).
+MSP -> MSP: ms-pedidos vuelve a validar el JWT y verifica RN-01 (40 <= cantidadTachos <= 80).
+MSP --> GW (Camino alternativo de rechazo): Si cantidadTachos está fuera de 40–80, responde 400 Bad Request.
+GW --> Admin (Camino alternativo de rechazo): El Gateway devuelve el 400 Bad Request al Administrador.
+MSP -> DB (Camino válido): Verifica que exista la Heladeria y hace INSERT en pedidos.pedido con estado PENDIENTE.
+DB --> MSP: Confirmación del pedido persistido en la cola regional FIFO.
+MSP --> GW: Devuelve 201 Created con el PedidoResponse.
+GW --> Admin: El Administrador recibe el 201 Created.
+
+(Nota: antes de planificar también se registra al menos un camionero con POST /v1/camioneros, que sigue el mismo circuito hacia ms-camioneros).
+
+Etapa B — Planificación y Orquestación de Ruta (FUN-03 / RN-02, RN-03, RN-04, RN-05)
+Admin -> GW: POST /v1/viajes/planificar/regiones/{idRegion} con su Bearer JWT.
+GW -> GW: Valida JWT y rol Administrador.
+GW -> MSL: Enruta la solicitud a ms-logistica (:8084).
+MSL -> KC: ms-logistica pide su propio token interno (grant_type=client_credentials, client_id=ms-logistica).
+KC --> MSL: Devuelve un JWT interno con rol ServicioInterno.
+MSL -> MSC: Llama directo a ms-camioneros: GET /v1/camioneros/siguiente (RN-04).
+MSC -> DB: Busca en camioneros.camionero el primero con estado = DISPONIBLE, contrato_activo = true y menor ultima_actualizacion_cola.
+MSC --> MSL: Devuelve CamioneroRemoto (con los datos del camión y su capacidadMaxTachos).
+MSL -> MSP: Llama directo a ms-pedidos: GET /v1/pedidos/regiones/{idRegion}/cola.
+MSP -> DB: Busca en pedidos.pedido los PENDIENTE de esa región ordenados FIFO.
+MSP --> MSL: Devuelve la lista de PedidoRemoto.
+MSL -> MSL: Por cada pedido candidato N, verifica coordenadas válidas de su heladería (RN-05).
+MSL -> MSL (Si las coordenadas son inválidas): Marca el pedido como rechazado y lo salta sin cortar el armado del viaje.
+MSL -> MSL: Verifica RN-02 (acumulado + tachos <= capacidadMaxTachos). Si supera, corta el ciclo.
+MSL -> OSRM: GET /route/v1/driving/{fabrica};{paradas+N}?overview=false.
+OSRM --> MSL: Devuelve la duración de conducción en segundos y distancia en metros.
+MSL -> MSL: Verifica RN-03 (conducción + N * 20 min <= 36.000 s). Si supera 10 h, corta el ciclo y el pedido N queda afuera.
+MSL -> MSP (Camino alternativo si no llega al piso de 280 tachos): PUT /v1/pedidos/{id}/reencolado de los inválidos.
+MSL --> GW (Si total < 280 tachos): Responde 422 Unprocessable Entity (PlanificacionNoViableException).
+GW --> Admin: El Administrador recibe el 422.
+MSL -> MSL (Si alcanza el piso >= 280 tachos): Construye la url_google_maps con origen vacío (RN-05).
+MSL -> DB: Guarda el Viaje en estado PLANIFICADO y sus ParadaViaje en el esquema logistica.
+MSL -> MSP: Por cada pedido incluido, invoca PUT /v1/pedidos/{id}/estado con {ASIGNADO}.
+MSL -> MSP: Por cada pedido incluido, invoca PUT /v1/pedidos/{id}/estado con {EN_TRANSITO}.
+MSL -> MSC: Invoca PUT /v1/camioneros/{id}/estado con {EN_VIAJE}.
+MSL -> MSP: Para los pedidos rechazados por coordenadas inválidas, invoca PUT /v1/pedidos/{id}/reencolado (best-effort).
+MSL --> GW: Devuelve 201 Created con el ViajeResponse (paradas + urlGoogleMaps).
+GW --> Admin: El Administrador recibe el 201 Created.
+Etapa C — Cierre Manual del Viaje (FUN-04)
+Admin -> GW: PUT /v1/viajes/{id}/cierre con {resultados: [{idPedido, ENTREGADO | NO_ENTREGADO}]}.
+GW -> MSL: Valida rol Administrador y enruta a ms-logistica.
+MSL -> DB: Lee el Viaje, valida que esté PLANIFICADO y que los IDs enviados coincidan exactamente con sus paradas.
+MSL -> MSP: Por cada parada, invoca PUT /v1/pedidos/{idPedido}/estado (ENTREGADO o NO_ENTREGADO, que lo reencola como PENDIENTE).
+MSL -> MSC y DB: Invoca PUT /v1/camioneros/{idCamionero}/estado (DISPONIBLE, va al final de la fila FIFO), pasa el viaje a FINALIZADO con fechaCierre y devuelve 200 OK.

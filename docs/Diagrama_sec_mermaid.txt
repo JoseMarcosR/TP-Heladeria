@@ -1,0 +1,59 @@
+sequenceDiagram
+    autonumber
+    participant Admin as Administrador
+    participant KC as Keycloak (:8081)
+    participant GW as api-gateway (:8080)
+    participant MSP as ms-pedidos (:8082)
+    participant MSL as ms-logistica (:8084)
+    participant MSC as ms-camioneros (:8083)
+    participant OSRM as OSRM Router
+    participant DB as DB
+
+    Admin->>KC: POST /protocol/openid-connect/token (password grant)
+    KC-->>Admin: JWT (Rol: Administrador)
+    Admin->>GW: POST /v1/pedidos {idHeladeria, cantidadTachos} (Bearer JWT)
+    GW->>GW: Valida JWT y rol Administrador
+    GW->>MSP: POST /v1/pedidos
+    MSP->>MSP: Valida RN-01 (40 <= cantidadTachos <= 80)
+    MSP-->>GW: 400 Bad Request (ReglaNegocioException)
+    GW-->>Admin: 400 Bad Request
+    MSP->>DB: Verifica existencia de Heladería e inserta Pedido (PENDIENTE)
+    DB-->>MSP: Pedido persistido en cola regional FIFO
+    MSP-->>GW: 201 Created (PedidoResponse)
+    GW-->>Admin: 201 Created
+    Admin->>GW: POST /v1/viajes/planificar/regiones/{idRegion} (Bearer JWT)
+    GW->>GW: Valida JWT y rol Administrador
+    GW->>MSL: POST /v1/viajes/planificar/regiones/{idRegion}
+    MSL->>KC: POST /token (client_credentials: ms-logistica)
+    KC-->>MSL: JWT Interno (Rol: ServicioInterno)
+    MSL->>MSC: GET /v1/camioneros/siguiente (RN-04: FIFO disponible con contrato activo)
+    MSC->>DB: Consulta próximo camionero DISPONIBLE + Camión
+    MSC-->>MSL: CamioneroRemoto (id, capacidadMaxTachos)
+    MSL->>MSP: GET /v1/pedidos/regiones/{idRegion}/cola
+    MSP->>DB: Consulta pedidos PENDIENTE ordenados FIFO
+    MSP-->>MSL: Lista de PedidoRemoto
+    MSL->>MSL: Verifica coordenadas válidas de heladería (RN-05)
+    MSL->>MSL: Marca pedido como rechazado (se salta sin cortar armado)
+    MSL->>MSL: Verifica capacidad de camión (RN-02: acumulado + tachos <= capacidad)
+    MSL->>OSRM: GET /route/v1/driving/{fabrica};{paradas+N}
+    OSRM-->>MSL: Duración de conducción (segundos)
+    MSL->>MSL: Verifica límite de viaje (RN-03: conducción + descargas <= 36.000s / 10h)
+    MSL->>MSP: PUT /v1/pedidos/{id}/reencolado (manda al final de la cola)
+    MSL-->>GW: 422 Unprocessable Entity (PlanificacionNoViableException)
+    GW-->>Admin: 422 Unprocessable Entity
+    MSL->>MSL: Genera url_google_maps (RN-05)
+    MSL->>DB: Guarda Viaje (PLANIFICADO) y ParadaViaje
+    MSL->>MSP: PUT /v1/pedidos/{id}/estado {ASIGNADO}
+    MSL->>MSP: PUT /v1/pedidos/{id}/estado {EN_TRANSITO}
+    MSL->>MSC: PUT /v1/camioneros/{id}/estado {EN_VIAJE}
+    MSL->>MSP: PUT /v1/pedidos/{id}/reencolado (best-effort)
+    MSL-->>GW: 201 Created (ViajeResponse con paradas y link Maps)
+    GW-->>Admin: 201 Created
+    Admin->>GW: PUT /v1/viajes/{id}/cierre {resultados: [{idPedido, ENTREGADO | NO_ENTREGADO}]}
+    GW->>MSL: PUT /v1/viajes/{id}/cierre
+    MSL->>DB: Obtiene Viaje (verifica estado PLANIFICADO y paradas exactas)
+    MSL->>MSP: PUT /v1/pedidos/{idPedido}/estado {ENTREGADO | NO_ENTREGADO}
+    MSL->>MSC: PUT /v1/camioneros/{idCamionero}/estado {DISPONIBLE}
+    MSL->>DB: Actualiza Viaje a FINALIZADO y guarda fechaCierre
+    MSL-->>GW: 200 OK (ViajeResponse)
+    GW-->>Admin: 200 OK
