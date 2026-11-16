@@ -1,0 +1,144 @@
+name: heladeria
+
+# Infraestructura (siempre):   docker compose up -d
+# Infra + OSRM local:          docker compose --profile osrm up -d
+# Infra + microservicios:      docker compose --profile apps up -d --build
+# Todo junto (con OSRM local): OSRM_URL=http://osrm:5000 docker compose --profile apps --profile osrm up -d --build
+
+services:
+  osrm:
+    profiles: ["osrm"]
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    container_name: osrm
+    ports:
+      - "${OSRM_PORT:-5000}:5000"
+    volumes:
+      - ./osrm-data:/data:ro
+    command: >
+      osrm-routed /data/argentina-latest.osrm
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Fija el issuer ("iss") de TODOS los tokens a http://localhost:8081/..., aunque ms-logistica pida su token
+      # de servicio desde dentro de Docker (http://keycloak:8080). Sin esto, ms-pedidos/ms-camioneros lo rechazarían.
+      KC_HOSTNAME_URL: http://localhost:8081
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./keycloak/heladeria-realm.json:/opt/keycloak/data/import/heladeria-realm.json:ro
+
+  ms-pedidos:
+    profiles: ["apps"]
+    build:
+      context: .
+      args:
+        MODULE: ms-pedidos
+    environment:
+      SERVER_PORT: 8082
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx256m"
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI}
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/heladeria/protocol/openid-connect/certs
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ms-camioneros:
+    profiles: ["apps"]
+    build:
+      context: .
+      args:
+        MODULE: ms-camioneros
+    environment:
+      SERVER_PORT: 8083
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx256m"
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI}
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/heladeria/protocol/openid-connect/certs
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ms-logistica:
+    profiles: ["apps"]
+    build:
+      context: .
+      args:
+        MODULE: ms-logistica
+    environment:
+      SERVER_PORT: 8084
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx256m"
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI}
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/heladeria/protocol/openid-connect/certs
+      KEYCLOAK_TOKEN_URI: http://keycloak:8080/realms/heladeria/protocol/openid-connect/token
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-ms-logistica-secret}
+      MS_PEDIDOS_URL: http://ms-pedidos:8082
+      MS_CAMIONEROS_URL: http://ms-camioneros:8083
+      OSRM_URL: ${OSRM_URL:-https://router.project-osrm.org}
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      ms-pedidos:
+        condition: service_started
+      ms-camioneros:
+        condition: service_started
+
+  api-gateway:
+    profiles: ["apps"]
+    build:
+      context: .
+      args:
+        MODULE: api-gateway
+    environment:
+      SERVER_PORT: 8080
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx256m"
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI}
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/heladeria/protocol/openid-connect/certs
+      MS_PEDIDOS_URL: http://ms-pedidos:8082
+      MS_CAMIONEROS_URL: http://ms-camioneros:8083
+      MS_LOGISTICA_URL: http://ms-logistica:8084
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ms-pedidos
+      - ms-camioneros
+      - ms-logistica
+
+volumes:
+  pgdata:

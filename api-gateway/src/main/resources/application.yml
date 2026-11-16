@@ -1,0 +1,66 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: api-gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri solo valida el claim "iss"; las claves se leen de jwk-set-uri
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/heladeria}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8081/realms/heladeria/protocol/openid-connect/certs}
+  cloud:
+    gateway:
+      routes:
+        # ---------- API de negocio (protegida en SecurityConfig) ----------
+        - id: ms-pedidos
+          uri: ${MS_PEDIDOS_URL:http://localhost:8082}
+          predicates:
+            - Path=/v1/pedidos/**,/v1/regiones/**
+        - id: ms-camioneros
+          uri: ${MS_CAMIONEROS_URL:http://localhost:8083}
+          predicates:
+            - Path=/v1/camioneros/**,/v1/camiones/**
+        - id: ms-logistica
+          uri: ${MS_LOGISTICA_URL:http://localhost:8084}
+          predicates:
+            - Path=/v1/viajes/**
+
+        # ---------- OpenAPI de cada servicio, expuesto vía gateway para el Swagger UI unificado ----------
+        - id: docs-ms-pedidos
+          uri: ${MS_PEDIDOS_URL:http://localhost:8082}
+          predicates:
+            - Path=/docs/ms-pedidos/v3/api-docs/**
+          filters:
+            - 'RewritePath=/docs/ms-pedidos/(?<segment>.*), /$\{segment}'
+        - id: docs-ms-camioneros
+          uri: ${MS_CAMIONEROS_URL:http://localhost:8083}
+          predicates:
+            - Path=/docs/ms-camioneros/v3/api-docs/**
+          filters:
+            - 'RewritePath=/docs/ms-camioneros/(?<segment>.*), /$\{segment}'
+        - id: docs-ms-logistica
+          uri: ${MS_LOGISTICA_URL:http://localhost:8084}
+          predicates:
+            - Path=/docs/ms-logistica/v3/api-docs/**
+          filters:
+            - 'RewritePath=/docs/ms-logistica/(?<segment>.*), /$\{segment}'
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+springdoc:
+  swagger-ui:
+    persist-authorization: true
+    urls:
+      - name: ms-pedidos
+        url: /docs/ms-pedidos/v3/api-docs
+      - name: ms-camioneros
+        url: /docs/ms-camioneros/v3/api-docs
+      - name: ms-logistica
+        url: /docs/ms-logistica/v3/api-docs

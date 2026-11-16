@@ -1,0 +1,2694 @@
+{
+  "info": {
+    "_postman_id": "4c82c2ff-a290-4071-98df-71663136f9b3",
+    "name": "Logistica-Helados-TPI",
+    "description": "Grupo 119 (3K3B) - Distribución de pedidos para heladerías.\n\nEjecutar con Local-Env.postman_environment.json sobre una base limpia (docker compose down -v && docker compose up -d) y los 4 microservicios + gateway levantados. ms-logistica usa OSRM para calcular rutas (sin API key; necesita internet si se usa el servidor público).\n\nOrden de corrida (Runner): 01 -> 02 -> 03 -> 04. Los pedidos (02) se cargan antes que los camioneros (03) pero son independientes; la planificación (04) requiere ambos.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 - Autenticación (Keycloak)",
+      "item": [
+        {
+          "name": "Login Administrador (password grant)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "heladeria-api",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "admin",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "admin123",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloak_url}}/realms/heladeria/protocol/openid-connect/token",
+              "host": [
+                "{{keycloak_url}}"
+              ],
+              "path": [
+                "realms",
+                "heladeria",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "Guarda {{token_admin}}. También genera {{run_id}} para que DNI y patentes sean únicos."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set(\"run_id\", Date.now().toString().slice(-9)); // evita DNI/patentes repetidos entre corridas"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Login OK (200) y access_token presente\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().access_token).to.be.a('string');",
+                  "});",
+                  "pm.environment.set(\"token_admin\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Camionero (password grant)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "heladeria-api",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "camionero",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "camionero123",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloak_url}}/realms/heladeria/protocol/openid-connect/token",
+              "host": [
+                "{{keycloak_url}}"
+              ],
+              "path": [
+                "realms",
+                "heladeria",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Login OK (200) y access_token presente\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().access_token).to.be.a('string');",
+                  "});",
+                  "pm.environment.set(\"token_camionero\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login ServicioInterno (client credentials, cliente ms-logistica)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "ms-logistica",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "ms-logistica-secret",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloak_url}}/realms/heladeria/protocol/openid-connect/token",
+              "host": [
+                "{{keycloak_url}}"
+              ],
+              "path": [
+                "realms",
+                "heladeria",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "Sirve para invocar a mano los endpoints internos (GET /v1/camioneros/siguiente, GET /v1/camiones/{id})."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Login OK (200) y access_token presente\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().access_token).to.be.a('string');",
+                  "});",
+                  "pm.environment.set(\"token_servicio\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[ESC-06] Sin token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/regiones",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "regiones"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "El api-gateway rechaza toda petición a /v1/** sin Authorization: Bearer."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 Unauthorized sin token\", function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 - Pedidos y Geografía",
+      "item": [
+        {
+          "name": "Listar regiones (guarda los id_region_*)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/regiones",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "regiones"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y 4 regiones\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().length).to.eql(4);",
+                  "});",
+                  "const regiones = pm.response.json();",
+                  "const idDe = (n) => (regiones.find(r => r.nombre === n) || {}).id;",
+                  "pm.environment.set(\"id_region_capital\", idDe(\"CAPITAL\"));",
+                  "pm.environment.set(\"id_region_noroeste\", idDe(\"NOROESTE\"));",
+                  "pm.environment.set(\"id_region_este\", idDe(\"ESTE\"));",
+                  "pm.environment.set(\"id_region_sur\", idDe(\"SUR\"));",
+                  "pm.environment.set(\"id_region\", idDe(\"ESTE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[ESC-04 / CV-01] Pedido de 30 tachos -> 400 (RN-01)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idHeladeria\": 9,\n  \"cantidadTachos\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 Bad Request por RN-01 (mínimo 40)\", function () { pm.response.to.have.status(400); });",
+                  "pm.test(\"El detalle menciona RN-01\", function () { pm.expect(pm.response.json().detail).to.include(\"RN-01\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[ESC-04] Pedido de 100 tachos -> 400 (RN-01)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idHeladeria\": 9,\n  \"cantidadTachos\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 Bad Request por RN-01 (máximo 80)\", function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[ESC-06 / CV-06] Token Camionero intenta cargar un pedido -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_camionero}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idHeladeria\": 9,\n  \"cantidadTachos\": 70\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403 Forbidden (el gateway corta antes de llegar al servicio)\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[ESC-06] Cargar pedido sin token -> 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idHeladeria\": 9,\n  \"cantidadTachos\": 70\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 Unauthorized\", function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cargar pedido 1/5 - ESTE, 70 tachos (heladería 12)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idHeladeria\": 12,\n  \"cantidadTachos\": 70\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const p = pm.response.json();",
+                  "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                  "    pm.expect(p.cantidadTachos).to.eql(70);",
+                  "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_este\")));",
+                  "});",
+                  "pm.environment.set(\"id_pedido_este_1\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cargar pedido 2/5 - ESTE, 70 tachos (heladería 9)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idHeladeria\": 9,\n  \"cantidadTachos\": 70\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const p = pm.response.json();",
+                  "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                  "    pm.expect(p.cantidadTachos).to.eql(70);",
+                  "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_este\")));",
+                  "});",
+                  "pm.environment.set(\"id_pedido_este_2\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cargar pedido 3/5 - ESTE, 70 tachos (heladería 9)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idHeladeria\": 9,\n  \"cantidadTachos\": 70\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const p = pm.response.json();",
+                  "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                  "    pm.expect(p.cantidadTachos).to.eql(70);",
+                  "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_este\")));",
+                  "});",
+                  "pm.environment.set(\"id_pedido_este_3\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cargar pedido 4/5 - ESTE, 70 tachos (heladería 9)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idHeladeria\": 9,\n  \"cantidadTachos\": 70\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const p = pm.response.json();",
+                  "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                  "    pm.expect(p.cantidadTachos).to.eql(70);",
+                  "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_este\")));",
+                  "});",
+                  "pm.environment.set(\"id_pedido_este_4\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cargar pedido 5/5 - ESTE, 70 tachos (heladería 9)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idHeladeria\": 9,\n  \"cantidadTachos\": 70\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const p = pm.response.json();",
+                  "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                  "    pm.expect(p.cantidadTachos).to.eql(70);",
+                  "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_este\")));",
+                  "});",
+                  "pm.environment.set(\"id_pedido_este_5\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar cola regional ESTE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos/regiones/{{id_region_este}}/cola",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos",
+                "regiones",
+                "{{id_region_este}}",
+                "cola"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y cola ESTE con los 5 pedidos PENDIENTE\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const cola = pm.response.json();",
+                  "    pm.expect(cola.length).to.be.at.least(5);",
+                  "    cola.forEach(p => pm.expect(p.estado).to.eql(\"PENDIENTE\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar detalle de un pedido",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos/{{id_pedido_este_1}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos",
+                "{{id_pedido_este_1}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y detalle con ubicación de la heladería\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const p = pm.response.json();",
+                  "    pm.expect(p.heladeria.latitud).to.be.a('number');",
+                  "    pm.expect(p.heladeria.longitud).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Ejecutar sobre una base limpia (docker compose down -v). Las heladerías 1-17 las siembra ms-pedidos: CAPITAL 1-4, NOROESTE 5-8, ESTE 9-12, SUR 13-17."
+    },
+    {
+      "name": "03 - Flota y Choferes",
+      "item": [
+        {
+          "name": "Alta camionero A + camión (capacidad 350)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/camioneros",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "camioneros"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dni\": \"{{run_id}}65\",\n  \"nombreCompleto\": \"Camionero A Test\",\n  \"telefono\": \"3510000005\",\n  \"camion\": {\n    \"patente\": \"TPA{{run_id}}\",\n    \"capacidadMaxTachos\": 350\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created, DISPONIBLE y capacidad 350\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.estado).to.eql(\"DISPONIBLE\");",
+                  "    pm.expect(c.camion.capacidadMaxTachos).to.eql(350);",
+                  "});",
+                  "pm.environment.set(\"id_camionero_a\", pm.response.json().id);",
+                  "pm.environment.set(\"id_camion_a\", pm.response.json().camion.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Alta camionero B + camión (capacidad 400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/camioneros",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "camioneros"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dni\": \"{{run_id}}66\",\n  \"nombreCompleto\": \"Camionero B Test\",\n  \"telefono\": \"3510000006\",\n  \"camion\": {\n    \"patente\": \"TPB{{run_id}}\",\n    \"capacidadMaxTachos\": 400\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created, DISPONIBLE y capacidad 400\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c.estado).to.eql(\"DISPONIBLE\");",
+                  "    pm.expect(c.camion.capacidadMaxTachos).to.eql(400);",
+                  "});",
+                  "pm.environment.set(\"id_camionero_b\", pm.response.json().id);",
+                  "pm.environment.set(\"id_camion_b\", pm.response.json().camion.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Alta con DNI repetido -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/camioneros",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "camioneros"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dni\": \"{{run_id}}65\",\n  \"nombreCompleto\": \"Duplicado\",\n  \"telefono\": \"351\",\n  \"camion\": {\n    \"patente\": \"TPZ{{run_id}}\",\n    \"capacidadMaxTachos\": 100\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"409 Conflict por DNI repetido\", function () { pm.response.to.have.status(409); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Alta con capacidad 600 -> 400 (máximo 500)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/camioneros",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "camioneros"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dni\": \"{{run_id}}99\",\n  \"nombreCompleto\": \"Capacidad excesiva\",\n  \"telefono\": \"351\",\n  \"camion\": {\n    \"patente\": \"TPX{{run_id}}\",\n    \"capacidadMaxTachos\": 600\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 Bad Request\", function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[ESC-06 / CV-06] Token Camionero intenta dar de alta un camionero -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/camioneros",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "camioneros"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_camionero}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dni\": \"{{run_id}}98\",\n  \"nombreCompleto\": \"X\",\n  \"telefono\": \"351\",\n  \"camion\": {\n    \"patente\": \"TPY{{run_id}}\",\n    \"capacidadMaxTachos\": 100\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403 Forbidden\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[CV-02] Siguiente de la cola FIFO global (token ServicioInterno) -> camionero A",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/camioneros/siguiente",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "camioneros",
+                "siguiente"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_servicio}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "RN-04. Requiere base limpia: si hubiera camioneros DISPONIBLES de corridas anteriores, el primero sería otro."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y el primero de la cola es el camionero A (el más antiguo)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(String(pm.response.json().id)).to.eql(String(pm.environment.get(\"id_camionero_a\")));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Siguiente con token Administrador -> 403 (solo ServicioInterno)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/camioneros/siguiente",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "camioneros",
+                "siguiente"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403 Forbidden\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar camión del camionero A (ServicioInterno) - RN-02",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/camiones/{{id_camion_a}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "camiones",
+                "{{id_camion_a}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_servicio}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y capacidad de freezer 350\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().capacidadMaxTachos).to.eql(350);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Camionero A (350 tachos) se registra antes que B (400): A es el primero de la cola FIFO global."
+    },
+    {
+      "name": "04 - Planificación y Viajes",
+      "item": [
+        {
+          "name": "[ESC-01 / CV-04] Planificar región ESTE (admin) -> hoja de ruta",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/planificar/regiones/{{id_region_este}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "planificar",
+                "regiones",
+                "{{id_region_este}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Requiere que ms-logistica llegue a OSRM (OSRM_URL). Camionero A (350) + 5 pedidos de 70 = 350 tachos."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created con viaje PLANIFICADO\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    pm.expect(pm.response.json().estado).to.eql(\"PLANIFICADO\");",
+                  "});",
+                  "const v = pm.response.json();",
+                  "pm.test(\"[CV-02] Se asignó el camionero A (FIFO)\", function () {",
+                  "    pm.expect(String(v.idCamionero)).to.eql(String(pm.environment.get(\"id_camionero_a\")));",
+                  "});",
+                  "pm.test(\"5 paradas ordenadas, 350 tachos\", function () {",
+                  "    pm.expect(v.paradas.length).to.eql(5);",
+                  "    pm.expect(v.totalTachosCargados).to.eql(350);",
+                  "    v.paradas.forEach((p, i) => pm.expect(p.ordenVisita).to.eql(i + 1));",
+                  "});",
+                  "pm.test(\"Tiempo estimado <= 36.000 s (RN-03)\", function () { pm.expect(v.tiempoEstimadoSeg).to.be.at.most(36000); });",
+                  "pm.test(\"[RN-05] URL de Google Maps con origen vacío\", function () {",
+                  "    pm.expect(v.urlGoogleMaps.startsWith(\"https://www.google.com/maps/dir//\")).to.eql(true);",
+                  "});",
+                  "pm.environment.set(\"id_viaje\", v.id);",
+                  "// Cuerpo del cierre: 1er pedido ENTREGADO, 2do NO_ENTREGADO, el resto ENTREGADO",
+                  "const resultados = v.paradas.map((p, i) => ({ idPedido: p.idPedido, estado: i === 1 ? \"NO_ENTREGADO\" : \"ENTREGADO\" }));",
+                  "pm.environment.set(\"cierre_body\", JSON.stringify({ resultados: resultados }));",
+                  "pm.environment.set(\"id_pedido_no_entregado\", v.paradas[1].idPedido);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[CV-04] Consultar el viaje (Administrador)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/{{id_viaje}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "{{id_viaje}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y viaje PLANIFICADO con url_google_maps\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const v = pm.response.json();",
+                  "    pm.expect(v.estado).to.eql(\"PLANIFICADO\");",
+                  "    pm.expect(v.urlGoogleMaps).to.include(\"https://www.google.com/maps/dir//\");",
+                  "    pm.expect(v.paradas.length).to.eql(5);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[CV-04] Consultar el viaje (Camionero)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/{{id_viaje}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "{{id_viaje}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_camionero}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y viaje PLANIFICADO con url_google_maps\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const v = pm.response.json();",
+                  "    pm.expect(v.estado).to.eql(\"PLANIFICADO\");",
+                  "    pm.expect(v.urlGoogleMaps).to.include(\"https://www.google.com/maps/dir//\");",
+                  "    pm.expect(v.paradas.length).to.eql(5);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar viajes (Administrador)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y el viaje planificado figura en el historial\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().map(v => String(v.id))).to.include(String(pm.environment.get(\"id_viaje\")));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar viajes con token Camionero -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_camionero}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403 Forbidden\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[ESC-06 / CV-06] Token Camionero intenta planificar -> 403",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/planificar/regiones/{{id_region_este}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "planificar",
+                "regiones",
+                "{{id_region_este}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_camionero}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403 Forbidden (no llega a ms-logistica)\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[ESC-06] Planificar sin token -> 401",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/planificar/regiones/{{id_region_este}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "planificar",
+                "regiones",
+                "{{id_region_este}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 Unauthorized\", function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Escenario CV-07: rollback por capacidad (6 pedidos de 70, camión de 400)",
+          "item": [
+            {
+              "name": "Cargar pedido 1/6 - CAPITAL, 70 tachos (heladería 1)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/pedidos",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "pedidos"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"idHeladeria\": 1,\n  \"cantidadTachos\": 70\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                      "    pm.response.to.have.status(201);",
+                      "    const p = pm.response.json();",
+                      "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                      "    pm.expect(p.cantidadTachos).to.eql(70);",
+                      "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_capital\")));",
+                      "});",
+                      "pm.environment.set(\"id_pedido_cap_1\", pm.response.json().id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Cargar pedido 2/6 - CAPITAL, 70 tachos (heladería 2)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/pedidos",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "pedidos"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"idHeladeria\": 2,\n  \"cantidadTachos\": 70\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                      "    pm.response.to.have.status(201);",
+                      "    const p = pm.response.json();",
+                      "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                      "    pm.expect(p.cantidadTachos).to.eql(70);",
+                      "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_capital\")));",
+                      "});",
+                      "pm.environment.set(\"id_pedido_cap_2\", pm.response.json().id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Cargar pedido 3/6 - CAPITAL, 70 tachos (heladería 3)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/pedidos",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "pedidos"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"idHeladeria\": 3,\n  \"cantidadTachos\": 70\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                      "    pm.response.to.have.status(201);",
+                      "    const p = pm.response.json();",
+                      "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                      "    pm.expect(p.cantidadTachos).to.eql(70);",
+                      "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_capital\")));",
+                      "});",
+                      "pm.environment.set(\"id_pedido_cap_3\", pm.response.json().id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Cargar pedido 4/6 - CAPITAL, 70 tachos (heladería 4)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/pedidos",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "pedidos"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"idHeladeria\": 4,\n  \"cantidadTachos\": 70\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                      "    pm.response.to.have.status(201);",
+                      "    const p = pm.response.json();",
+                      "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                      "    pm.expect(p.cantidadTachos).to.eql(70);",
+                      "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_capital\")));",
+                      "});",
+                      "pm.environment.set(\"id_pedido_cap_4\", pm.response.json().id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Cargar pedido 5/6 - CAPITAL, 70 tachos (heladería 1)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/pedidos",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "pedidos"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"idHeladeria\": 1,\n  \"cantidadTachos\": 70\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                      "    pm.response.to.have.status(201);",
+                      "    const p = pm.response.json();",
+                      "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                      "    pm.expect(p.cantidadTachos).to.eql(70);",
+                      "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_capital\")));",
+                      "});",
+                      "pm.environment.set(\"id_pedido_cap_5\", pm.response.json().id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Cargar pedido 6/6 - CAPITAL, 70 tachos (heladería 2)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/pedidos",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "pedidos"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"idHeladeria\": 2,\n  \"cantidadTachos\": 70\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"201 Created y pedido PENDIENTE\", function () {",
+                      "    pm.response.to.have.status(201);",
+                      "    const p = pm.response.json();",
+                      "    pm.expect(p.estado).to.eql(\"PENDIENTE\");",
+                      "    pm.expect(p.cantidadTachos).to.eql(70);",
+                      "    pm.expect(String(p.heladeria.idRegion)).to.eql(String(pm.environment.get(\"id_region_capital\")));",
+                      "});",
+                      "pm.environment.set(\"id_pedido_cap_6\", pm.response.json().id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "[CV-07] Planificar CAPITAL: camión B (400) -> entran 5 pedidos",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/viajes/planificar/regiones/{{id_region_capital}}",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "viajes",
+                    "planificar",
+                    "regiones",
+                    "{{id_region_capital}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"201 Created\", function () { pm.response.to.have.status(201); });",
+                      "const v = pm.response.json();",
+                      "pm.test(\"[CV-07] Entran solo 5 pedidos (350 tachos); el 6to sufre rollback\", function () {",
+                      "    pm.expect(v.paradas.length).to.eql(5);",
+                      "    pm.expect(v.totalTachosCargados).to.eql(350);",
+                      "    const ids = v.paradas.map(p => String(p.idPedido));",
+                      "    pm.expect(ids).to.not.include(String(pm.environment.get(\"id_pedido_cap_6\")));",
+                      "});",
+                      "pm.test(\"Se asignó el camionero B (A ya está EN_VIAJE)\", function () {",
+                      "    pm.expect(String(v.idCamionero)).to.eql(String(pm.environment.get(\"id_camionero_b\")));",
+                      "});",
+                      "pm.environment.set(\"id_viaje_cv07\", v.id);",
+                      "pm.environment.set(\"cierre_parcial_body\", JSON.stringify({ resultados: [{ idPedido: v.paradas[0].idPedido, estado: \"ENTREGADO\" }] }));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "[CV-07] Cola CAPITAL: queda el pedido 6 PENDIENTE",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/pedidos/regiones/{{id_region_capital}}/cola",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "pedidos",
+                    "regiones",
+                    "{{id_region_capital}}",
+                    "cola"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"[CV-07] El pedido 6 quedó PENDIENTE e intacto en la cola CAPITAL\", function () {",
+                      "    pm.response.to.have.status(200);",
+                      "    const cola = pm.response.json();",
+                      "    pm.expect(cola.length).to.eql(1);",
+                      "    pm.expect(String(cola[0].id)).to.eql(String(pm.environment.get(\"id_pedido_cap_6\")));",
+                      "    pm.expect(cola[0].estado).to.eql(\"PENDIENTE\");",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "[ESC-05] Planificar sin camioneros DISPONIBLES -> 409",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/planificar/regiones/{{id_region_noroeste}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "planificar",
+                "regiones",
+                "{{id_region_noroeste}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "A y B están EN_VIAJE: ms-logistica aborta sin modificar pedidos ni camioneros."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"[ESC-05] 409 Conflict (RN-04): A y B están EN_VIAJE\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([409, 422]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Escenario CV-03: rollback por cadena de frío (10 h)",
+          "item": [
+            {
+              "name": "Alta camionero C + camión (capacidad 500)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/camioneros",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "camioneros"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"dni\": \"{{run_id}}67\",\n  \"nombreCompleto\": \"Camionero C Test\",\n  \"telefono\": \"3510000007\",\n  \"camion\": {\n    \"patente\": \"TPC{{run_id}}\",\n    \"capacidadMaxTachos\": 500\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"201 Created, DISPONIBLE y capacidad 500\", function () {",
+                      "    pm.response.to.have.status(201);",
+                      "    const c = pm.response.json();",
+                      "    pm.expect(c.estado).to.eql(\"DISPONIBLE\");",
+                      "    pm.expect(c.camion.capacidadMaxTachos).to.eql(500);",
+                      "});",
+                      "pm.environment.set(\"id_camionero_c\", pm.response.json().id);",
+                      "pm.environment.set(\"id_camion_c\", pm.response.json().camion.id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Preparar cola ESTE: 12 pedidos de 40 tachos (se crean desde el pre-request)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/pedidos/regiones/{{id_region_este}}/cola",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "pedidos",
+                    "regiones",
+                    "{{id_region_este}}",
+                    "cola"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// 7 pedidos en San Francisco (heladería 9) + alternando Marcos Juárez (10) y Morteros (11): fuerza el corte de 10 horas",
+                      "const heladerias = [9, 9, 9, 9, 9, 9, 9, 10, 11, 10, 11, 10];",
+                      "const base = pm.environment.get(\"gateway_url\");",
+                      "const token = pm.environment.get(\"token_admin\");",
+                      "function crear(i) {",
+                      "    if (i >= heladerias.length) { return; }",
+                      "    pm.sendRequest({",
+                      "        url: base + \"/v1/pedidos\", method: \"POST\",",
+                      "        header: { \"Content-Type\": \"application/json\", \"Authorization\": \"Bearer \" + token },",
+                      "        body: { mode: \"raw\", raw: JSON.stringify({ idHeladeria: heladerias[i], cantidadTachos: 40 }) }",
+                      "    }, function (err, res) {",
+                      "        if (err || res.code !== 201) { console.error(\"No se pudo crear el pedido \" + (i + 1), err || res.code); return; }",
+                      "        crear(i + 1);",
+                      "    });",
+                      "}",
+                      "crear(0);"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"La cola ESTE tiene 12 pedidos PENDIENTE de 40 tachos\", function () {",
+                      "    pm.response.to.have.status(200);",
+                      "    const cola = pm.response.json();",
+                      "    pm.expect(cola.length).to.eql(12);",
+                      "    pm.environment.set(\"cola_este_antes\", cola.length);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "[ESC-02 / CV-03] Planificar ESTE: corte a las 10 h",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/viajes/planificar/regiones/{{id_region_este}}",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "viajes",
+                    "planificar",
+                    "regiones",
+                    "{{id_region_este}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "description": "Depende de los tiempos reales de OSRM. Si en tu ruta no se alcanza el corte, ajustá la lista de heladerías del paso anterior. El caso determinístico está cubierto en PlanificadorServiceTest."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"[ESC-02 / CV-03] 201: el viaje se cierra antes de las 10 h con los N-1 pedidos\", function () {",
+                      "    pm.response.to.have.status(201);",
+                      "    const v = pm.response.json();",
+                      "    pm.expect(v.tiempoEstimadoSeg).to.be.at.most(36000);",
+                      "    pm.expect(v.paradas.length).to.be.at.least(7);   // piso de 280 tachos",
+                      "    pm.expect(v.paradas.length).to.be.below(12);     // al menos un pedido sufrió rollback",
+                      "    pm.environment.set(\"paradas_10h\", v.paradas.length);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "[RN-03] Cola ESTE: los excedentes siguen PENDIENTE",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{gateway_url}}/v1/pedidos/regiones/{{id_region_este}}/cola",
+                  "host": [
+                    "{{gateway_url}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "pedidos",
+                    "regiones",
+                    "{{id_region_este}}",
+                    "cola"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token_admin}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"[RN-03] Los pedidos excedentes siguen PENDIENTE en la cola ESTE\", function () {",
+                      "    pm.response.to.have.status(200);",
+                      "    const cola = pm.response.json();",
+                      "    pm.expect(cola.length).to.eql(12 - Number(pm.environment.get(\"paradas_10h\")));",
+                      "    cola.forEach(p => pm.expect(p.estado).to.eql(\"PENDIENTE\"));",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "[ESC-03 / CV-05] Cierre manual: 1 ENTREGADO + 1 NO_ENTREGADO + resto ENTREGADO",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/{{id_viaje}}/cierre",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "{{id_viaje}}",
+                "cierre"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{cierre_body}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"[CV-05] 200: viaje FINALIZADO\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const v = pm.response.json();",
+                  "    pm.expect(v.estado).to.eql(\"FINALIZADO\");",
+                  "    pm.expect(v.fechaCierre).to.be.a('string');",
+                  "    pm.expect(v.paradas[0].entregadoConfirmado).to.eql(true);",
+                  "    pm.expect(v.paradas[1].entregadoConfirmado).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[CV-05] El pedido NO_ENTREGADO volvió a PENDIENTE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/pedidos/{{id_pedido_no_entregado}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "pedidos",
+                "{{id_pedido_no_entregado}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y estado PENDIENTE (reencolado)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().estado).to.eql(\"PENDIENTE\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "[CV-05 / RN-04] El camionero A vuelve a DISPONIBLE (siguiente de la cola)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/camioneros/siguiente",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "camioneros",
+                "siguiente"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_servicio}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"A está DISPONIBLE nuevamente (B y C siguen EN_VIAJE)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(String(pm.response.json().id)).to.eql(String(pm.environment.get(\"id_camionero_a\")));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cerrar de nuevo un viaje FINALIZADO -> 409",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/{{id_viaje}}/cierre",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "{{id_viaje}}",
+                "cierre"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{cierre_body}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"409 Conflict\", function () { pm.response.to.have.status(409); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cierre incompleto (falta informar paradas) -> 400",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/{{id_viaje_cv07}}/cierre",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "{{id_viaje_cv07}}",
+                "cierre"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{cierre_parcial_body}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 Bad Request\", function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cierre con token Camionero -> 403",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/{{id_viaje_cv07}}/cierre",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "{{id_viaje_cv07}}",
+                "cierre"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_camionero}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{cierre_parcial_body}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403 Forbidden\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Viaje inexistente -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/v1/viajes/999999",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "v1",
+                "viajes",
+                "999999"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"404 Not Found\", function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Orden guiado: login -> alta de camioneros -> pedidos -> planificar -> GET viaje -> cierre. Los escenarios de contrato (ESC-01..06 y CV-01..07) están marcados en el nombre de cada request."
+    }
+  ]
+}

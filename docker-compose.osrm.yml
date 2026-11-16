@@ -1,0 +1,15 @@
+# Servicio OSRM local según docs/OSRM_routing_arg.pdf (Sección 4)
+# Uso:
+#   docker compose -f docker-compose.osrm.yml up -d
+# (También está integrado en docker-compose.yml bajo el perfil "osrm": docker compose --profile osrm up -d)
+
+services:
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    container_name: osrm
+    ports:
+      - "${OSRM_PORT:-5000}:5000"
+    volumes:
+      - ./osrm-data:/data:ro
+    command: >
+      osrm-routed /data/argentina-latest.osrm

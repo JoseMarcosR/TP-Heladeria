@@ -1,0 +1,76 @@
+server:
+  port: ${SERVER_PORT:8084}
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: ms-logistica
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/heladeria}
+    username: ${DB_USER:heladeria}
+    password: ${DB_PASSWORD:heladeria}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        default_schema: logistica
+      jakarta:
+        persistence:
+          create-database-schemas: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri solo valida el claim "iss"; las claves se leen de jwk-set-uri
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/heladeria}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8081/realms/heladeria/protocol/openid-connect/certs}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+springdoc:
+  swagger-ui:
+    persist-authorization: true
+
+# ---------------------------------------------------------------------------
+# Parámetros de negocio y de integración de ms-logistica
+# ---------------------------------------------------------------------------
+logistica:
+  planificacion:
+    # Piso acumulado de tachos para despachar un viaje: si no se alcanza => 422 y no se toca nada
+    # (regla de la guía; no numerada en el contrato). Los pedidos rechazados por RN-05 no suman.
+    piso-minimo-tachos: ${PISO_MINIMO_TACHOS:280}
+    # RN-03: minutos de descarga por parada
+    tiempo-descarga-min: ${TIEMPO_DESCARGA_MIN:20}
+    # RN-03: límite de cadena de frío. 10 horas = 36.000 segundos
+    limite-viaje-segundos: ${LIMITE_VIAJE_SEGUNDOS:36000}
+    # RN-03: Tiempo Total = conducción (OSRM) + descargas; se corta si supera limite-viaje-segundos.
+    # true  => descarga = N * 20 min     (decisión confirmada por el equipo: "20 min por cada parada")
+    # false => descarga = (N-1) * 20 min (lectura alternativa: fórmula literal de RN-03)
+    descarga-incluye-ultima-parada: ${DESCARGA_INCLUYE_ULTIMA_PARADA:true}
+    # false => la ruta y el tiempo terminan en la última heladería; true => se cuenta la vuelta a la fábrica
+    incluir-vuelta-a-fabrica: ${INCLUIR_VUELTA_A_FABRICA:false}
+  fabrica:
+    # Origen de todas las rutas: la fábrica, ubicada en la UTN FRC (Ciudad Universitaria, Córdoba).
+    latitud: ${FABRICA_LAT:-31.44276586787743}
+    longitud: ${FABRICA_LNG:-64.19411487348728}
+  routes:
+    # OSRM: sin API key. Por defecto, el servidor público de demostración (uso moderado); para uno propio: OSRM_URL
+    url: ${OSRM_URL:https://router.project-osrm.org}
+    connect-timeout-ms: ${OSRM_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${OSRM_READ_TIMEOUT_MS:15000}
+  servicios:
+    pedidos-url: ${MS_PEDIDOS_URL:http://localhost:8082}
+    camioneros-url: ${MS_CAMIONEROS_URL:http://localhost:8083}
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000
+  keycloak:
+    # Client credentials del cliente confidencial "ms-logistica" (rol ServicioInterno)
+    token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8081/realms/heladeria/protocol/openid-connect/token}
+    client-id: ${KEYCLOAK_CLIENT_ID:ms-logistica}
+    client-secret: ${KEYCLOAK_CLIENT_SECRET:ms-logistica-secret}

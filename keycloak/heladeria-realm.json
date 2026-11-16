@@ -1,0 +1,99 @@
+{
+  "realm": "heladeria",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 3600,
+  "roles": {
+    "realm": [
+      { "name": "Administrador", "description": "Administrador de Logística" },
+      { "name": "Camionero", "description": "Chofer (solo lectura de su contexto)" },
+      { "name": "ServicioInterno", "description": "Comunicación entre microservicios" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "heladeria-api",
+      "name": "Cliente para Postman / Swagger (password grant)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "ms-logistica",
+      "name": "Cuenta de servicio de ms-logistica (client credentials)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "ms-logistica-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin@heladeria.local",
+      "firstName": "Admin",
+      "lastName": "Logistica",
+      "credentials": [{ "type": "password", "value": "admin123", "temporary": false }],
+      "realmRoles": ["Administrador"]
+    },
+    {
+      "username": "camionero",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "camionero@heladeria.local",
+      "firstName": "Chofer",
+      "lastName": "Demo",
+      "credentials": [{ "type": "password", "value": "camionero123", "temporary": false }],
+      "realmRoles": ["Camionero"]
+    },
+    {
+      "username": "service-account-ms-logistica",
+      "enabled": true,
+      "serviceAccountClientId": "ms-logistica",
+      "realmRoles": ["ServicioInterno"]
+    }
+  ]
+}
