@@ -1,0 +1,88 @@
+Clonar y moverse a tmp
+
+git clone https://github.com/JoseMarcosR/TP-Heladeria.git /tmp/TP-Heladeria
+cd /tmp/TP-Heladeria
+
+===================================================================
+===================================================================
+
+1. Levantar la Infraestructura (PostgreSQL 16 + Keycloak 24 + Caché Maven en /tmp)
+
+Pegá todo este bloque junto en la Pestaña 1 (parado adentro de la carpeta del repositorio):
+
+===================================================================
+
+REPO_DIR="$PWD"
+# 1) Apuntar caché de Maven (.m2) a /tmp para no exceder la cuota de disco del usuario
+mkdir -p /tmp/heladeria-work/m2
+rm -rf ~/.m2 && ln -sfn /tmp/heladeria-work/m2 ~/.m2
+# 2) Descargar y levantar PostgreSQL 16 en /tmp (puerto 5432)
+if [ ! -d /tmp/heladeria-work/pg/bin ]; then
+  mkdir -p /tmp/heladeria-work/pg && cd /tmp/heladeria-work/pg
+  curl -L -o pg.jar https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-linux-amd64/16.2.0/embedded-postgres-binaries-linux-amd64-16.2.0.jar
+  jar xf pg.jar && tar -xf postgres-linux-x86_64.txz && rm -f pg.jar postgres-linux-x86_64.txz
+  ./bin/initdb -D ./data -U heladeria -A trust --encoding=UTF8 --no-locale
+  echo "CREATE DATABASE heladeria;" | ./bin/postgres --single -D ./data postgres
+fi
+/tmp/heladeria-work/pg/bin/pg_ctl -D /tmp/heladeria-work/pg/data status >/dev/null 2>&1 || \
+  /tmp/heladeria-work/pg/bin/pg_ctl -D /tmp/heladeria-work/pg/data -l /tmp/heladeria-work/postgres.log -o "-p 5432 -k /tmp" start
+# 3) Descargar y levantar Keycloak 24 con el realm importado en /tmp (puerto 8081)
+if [ ! -d /tmp/heladeria-work/kc/keycloak-24.0.5 ]; then
+  mkdir -p /tmp/heladeria-work/kc && cd /tmp/heladeria-work/kc
+  curl -L -o kc.tar.gz https://repo1.maven.org/maven2/org/keycloak/keycloak-quarkus-dist/24.0.5/keycloak-quarkus-dist-24.0.5.tar.gz
+  tar -xzf kc.tar.gz && rm -f kc.tar.gz
+fi
+mkdir -p /tmp/heladeria-work/kc/keycloak-24.0.5/data/import
+cp "$REPO_DIR/keycloak/heladeria-realm.json" /tmp/heladeria-work/kc/keycloak-24.0.5/data/import/
+pkill -f keycloak 2>/dev/null || true
+KEYCLOAK_ADMIN=admin KEYCLOAK_ADMIN_PASSWORD=admin \
+  nohup /tmp/heladeria-work/kc/keycloak-24.0.5/bin/kc.sh start-dev --import-realm --http-port=8081 > /tmp/heladeria-work/keycloak.log 2>&1 &
+cd "$REPO_DIR"
+
+===================================================================
+===================================================================
+
+Esperás 15 segundos y verificás que Keycloak ya responda:
+
+===================================================================
+
+curl -s http://localhost:8081/realms/heladeria | head -c 120; echo ""
+
+===================================================================
+===================================================================
+
+2. Levantar los 4 Microservicios
+
+===================================================================
+Ms pedidos puerto: 8082
+
+mvn -pl ms-pedidos spring-boot:run -Djava.version=17
+
+===================================================================
+Ms camioneros puerto: 8083
+
+mvn -pl ms-camioneros spring-boot:run -Djava.version=17
+===================================================================
+Ms logistica puerto: 8084
+
+mvn -pl ms-logistica spring-boot:run -Djava.version=17
+===================================================================
+API Gateway puerto: 8080
+
+mvn -pl api-gateway spring-boot:run -Djava.version=17
+===================================================================
+===================================================================
+
+3. Obtener los tokens en una 5ta Pestaña y abrir Swagger UI
+===================================================================
+
+# Imprimir token de Administrador para copiar y pegar en el botón Authorize de Swagger UI:
+curl -s -X POST http://localhost:8081/realms/heladeria/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=heladeria-api -d username=admin -d password=admin123 \
+  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'; echo ""
+
+===================================================================
+Y abrís en el navegador: 
+http://localhost:8080/swagger-ui.html
+===================================================================
+
