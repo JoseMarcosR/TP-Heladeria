@@ -86,3 +86,9 @@ Y abrís en el navegador:
 http://localhost:8080/swagger-ui.html
 ===================================================================
 
+Tené a mano en tu archivo docs/comandos de ejecucion el comando para sacar el token del rol Camionero (camionero / camionero123):
+
+curl -s -X POST http://localhost:8081/realms/heladeria/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=heladeria-api -d username=camionero -d password=camionero123 \
+  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'; echo ""
+
