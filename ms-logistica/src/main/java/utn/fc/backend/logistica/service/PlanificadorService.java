@@ -246,6 +246,7 @@ public class PlanificadorService {
      */
     long descargaSegundos(int cantidadParadas) {
         int conDescarga = config.descargaIncluyeUltimaParada() ? cantidadParadas : Math.max(cantidadParadas - 1, 0);
+        // *60L porque OSRM devuelve en minutos, entonces lo pasa a segundos
         return (long) conDescarga * config.tiempoDescargaMin() * 60L;
     }
 

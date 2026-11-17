@@ -1,0 +1,122 @@
+1. ¿Qué hay en cada carpeta de src/main/java/...?
+📁 controller — La "puerta de entrada" HTTP (Capa de Presentación / API REST)
+Qué contiene: CamioneroController.java y CamionController.java.
+Para qué existe: Su única responsabilidad es hablar el idioma HTTP. Recibe las peticiones (@GetMapping, @PostMapping, @PutMapping), valida el formato básico del JSON de entrada (@Valid), llama al service y devuelve el código de estado HTTP adecuado (200 OK, 201 Created).
+Regla de oro: Un Controller nunca toma decisiones de negocio ni toca la base de datos directamente (repository).
+📁 dto (Data Transfer Object) — Los "formularios" que viajan por la red
+Qué contiene: Records de Java como CamioneroRequest.java (datos que entran) y CamioneroResponse.java (datos que salen).
+Para qué existe: Define el contrato público JSON de la API y tiene las validaciones sintácticas (@NotBlank, @Positive, @Min).
+¿Por qué no devolvemos directamente la clase model (la tabla)?
+Desacoplamiento: Si mañana renombramos una columna en la base de datos o agregamos un campo interno, los clientes u otros microservicios no se rompen porque el DTO sigue igual.
+Seguridad y limpieza: Evita exponer relaciones internas de JPA/Hibernate (o provocar bucles infinitos al convertir relaciones bidireccionales a JSON).
+📁 service — El "cerebro" del microservicio (Capa de Negocio)
+Qué contiene: CamioneroService.java y CamionService.java (y en logística, PlanificadorService.java y ViajeService.java).
+Para qué existe: Acá viven todas las Reglas de Negocio (RN-01 a RN-06) y el manejo de transacciones (@Transactional). Por ejemplo, en CamioneroService se valida que el camión esté disponible y que un camionero con contrato inactivo (RN-04) no pueda salir a ruta.
+📁 repository — El "traductor" a la Base de Datos (Capa de Acceso a Datos)
+Qué contiene: Interfaces como CamioneroRepository.java y CamionRepository.java que extienden JpaRepository.
+Para qué existe: Se encarga exclusivamente de ejecutar consultas SQL contra PostgreSQL (findAll(), save(), o consultas específicas como buscar la cola FIFO findColaFifoDisponibles). No sabe nada de HTTP ni de reglas de negocio.
+📁 model — El espejo de las tablas SQL (Capa de Dominio / Entidades JPA)
+Qué contiene: Las entidades @Entity (Camionero.java, Camion.java) y los enum de estado (EstadoCamionero.java).
+Para qué existe: Representa cómo se guardan los datos en PostgreSQL (@Table, @Id, @Column, @OneToOne, @ManyToOne).
+📁 exception — El manejo centralizado de errores
+Qué contiene: Excepciones propias (ReglaNegocioException.java, RecursoNoEncontradoException.java, ConflictoEstadoException.java) y el GlobalExceptionHandler.java (@RestControllerAdvice).
+Para qué existe: Para no llenar los controllers de bloques try / catch. Cuando el service detecta que se viola una regla de negocio, lanza una excepción y el GlobalExceptionHandler la atrapa automáticamente y la transforma en un JSON estándar RFC 7807 (ProblemDetail) con el código HTTP exacto (404, 409, 422).
+📁 config — Configuración técnica y transversal
+Qué contiene:
+SecurityConfig.java: Configura Spring Security, cómo leer los roles de Keycloak desde el JWT y qué rol puede tocar cada URL (@PreAuthorize / hasAnyRole).
+OpenApiConfig.java: Configura Swagger UI y el botón Authorize con Bearer JWT.
+DataSeeder.java: Carga los datos iniciales al arrancar si la base está vacía.
+📁 client (Presente además en ms-logistica) — Clientes HTTP hacia otros sistemas
+Qué contiene: En ms-logistica/src/main/java/utn/fc/backend/logistica/client están PedidosClient.java, CamionerosClient.java, OsrmRoutesClient.java y KeycloakTokenProvider.java.
+Para qué existe: Aísla las llamadas HTTP salientes (RestClient) hacia otros microservicios y APIs externas (OSRM, Keycloak). Así el PlanificadorService no tiene que armar URLs ni headers HTTP a mano.
+2. ¿Qué son los demás archivos que se ven abajo en tu captura?
+📄 CamionerosApplication.java: Tiene el método main() y la anotación @SpringBootApplication. Es el punto de arranque que enciende el microservicio.
+📁 src/main/resources: Contiene el application.yml (puerto 8082, conexión a PostgreSQL db_camioneros, URL de Keycloak y logs).
+📁 src/test: Contiene los tests unitarios automatizados (como CamioneroServiceTest.java) que prueban las reglas de negocio con JUnit 5 y Mockito sin necesidad de levantar la base de datos real.
+📁 target: Es la carpeta generada automáticamente por Maven donde van los archivos compilados .class y el .jar ejecutable (no se sube a Git porque está en .gitignore).
+📄 pom.xml: El archivo de configuración de Maven de ese microservicio donde se declaran sus librerías (Spring Web, Spring Data JPA, PostgreSQL Driver, OAuth2 Resource Server, SpringDoc OpenAPI).
+3. ¿Por qué está bien que esté separado así? (Argumento clave para el profesor)
+
+Si el profe te pregunta "¿Por qué separaron esto en paquetes en vez de hacer todo en el Controller?", la respuesta de manual (que además responde al criterio TEC-01 de la rúbrica de la cátedra: "Separación de responsabilidades por capas") es:
+
+Principio de Responsabilidad Única (SRP) y Arquitectura en Capas: Cada capa tiene una sola razón para cambiar:
+Si cambia cómo se muestra o recibe el JSON 
+→
+→ tocás controller / dto.
+Si cambia una regla de la heladería (ej. el mínimo pasa de 280 a 300 baldes) 
+→
+→ tocás solo service.
+Si cambia el motor de base de datos o una consulta SQL 
+→
+→ tocás repository / model.
+Facilidad para Testear (Unit Testing): Gracias a que la lógica está aislada en service, podemos probar PlanificadorServiceTest o CamioneroServiceTest simulando (mockeando) los repositorios y clientes HTTP en milisegundos. Si la lógica estuviera mezclada dentro del Controller o en queries SQL, sería dificilísimo testearla.
+Mantenibilidad y Trabajo en Equipo: Todos los microservicios (ms-pedidos, ms-camioneros, ms-logistica) respetan exactamente la misma estructura de paquetes, por lo que cualquier integrante del grupo sabe al instante dónde buscar un endpoint (controller), una regla (service) o una tabla (model).
+
+https://www.google.com/maps/dir//-31.423200,-64.188400/-31.403000,-64.179000/-31.369000,-64.233000/-31.293000,-64.295000/-31.425800,-64.193200
+
+
+1. En forma general: ¿Cómo se resolvieron las colas y por qué?
+
+En lugar de usar una cola volátil en memoria RAM de Java (como java.util.Queue / LinkedList) o un broker externo (como RabbitMQ), implementamos Colas FIFO Persistentes en Base de Datos (PostgreSQL) usando Spring Data JPA (Hibernate) + un campo de marca de tiempo (Instant ultimaActualizacionCola) indexado en la tabla.
+
+¿Por qué es la mejor decisión arquitectónica? (Para decirle al profe)
+Tolerancia a fallos (Persistencia): Si guardáramos la cola en una Queue<> en la memoria RAM de Java y el microservicio se reinicia, se perdería quién estaba primero en la fila. Al estar en PostgreSQL, aunque apagues todos los microservicios, el orden FIFO sigue intacto.
+Rollback sin perder el lugar en la fila: En este dominio, cuando un pedido no entra en el camión (por capacidad RN-02, por las 10 horas RN-03, o porque no se llegó a los 280 tachos), no debe perder su primer lugar en la cola. En una cola tradicional (pop()), una vez que sacás el elemento y lo volvés a meter (push()), queda último. Con nuestra cola en base de datos, mientras el pedido siga en estado PENDIENTE con su ultimaActualizacionCola original, sigue estando primero automáticamente.
+2. En forma puntual: ¿Cómo funciona cada cola en el código?
+A. La Cola Global de Camioneros (en ms-camioneros)
+El dato clave en la tabla (Camionero.java): Cada camionero tiene dos campos que definen su lugar en la fila:
+estado (DISPONIBLE o EN_VIAJE)
+ultimaActualizacionCola (java.time.Instant, con un índice SQL idx_camionero_cola en la línea 20 para que la búsqueda sea instantánea).
+Cómo se saca al primero de la fila (CamioneroRepository.java):
+java
+@Query("""
+        select c from Camionero c
+          join fetch c.camion cam
+        where c.estado = :estado and c.contratoActivo = true and cam.activo = true
+        order by c.ultimaActualizacionCola asc, c.id asc
+        """)
+List<Camionero> findCola(@Param("estado") EstadoCamionero estado, Pageable pageable);
+Y en CamioneroService.siguiente() lo llamamos con PageRequest.of(0, 1) (que en SQL hace un LIMIT 1). Así trae exactamente al más antiguo (asc) que esté DISPONIBLE y tenga contratoActivo = true (RN-04).
+Cómo rota la cola cuando el camionero termina su viaje (CamioneroService.java):
+java
+camionero.setEstado(destino);
+if (destino == EstadoCamionero.DISPONIBLE) {
+    camionero.setUltimaActualizacionCola(Instant.now());
+}
+¡Esa es toda la magia! Cuando se cierra el viaje y el camionero vuelve a DISPONIBLE, su ultimaActualizacionCola se actualiza a Instant.now() (la hora actual). Como la consulta ordena de más viejo a más nuevo (ORDER BY ultimaActualizacionCola ASC), automáticamente pasa al último lugar de la fila.
+B. Las 4 Colas Regionales de Pedidos (en ms-pedidos)
+El dato clave en la tabla (Pedido.java): Cuando nace un pedido, guarda fechaCreacion = Instant.now() y ultimaActualizacionCola = this.fechaCreacion.
+Cómo se obtiene la cola de una región (PedidoRepository.java):
+java
+@Query("""
+        select p from Pedido p
+          join fetch p.heladeria h
+          join fetch h.ciudad c
+          join fetch c.region r
+        where r.id = :idRegion and p.estado = :estado
+        order by coalesce(p.ultimaActualizacionCola, p.fechaCreacion) asc, p.id asc
+        """)
+List<Pedido> findCola(@Param("idRegion") Long idRegion, @Param("estado") EstadoPedido estado);
+Los 3 comportamientos distintos en la cola de pedidos:
+Pedido que se corta por capacidad (RN-02) o por 10h (RN-03): ms-logistica ni siquiera lo modifica en ms-pedidos. Sigue PENDIENTE con su ultimaActualizacionCola original 
+→
+→ queda 1° para el próximo camión.
+Pedido NO_ENTREGADO al cerrar el viaje (PedidoService.cambiarEstado): Pasa de EN_TRANSITO a PENDIENTE, pero NO se le toca ultimaActualizacionCola. Como su fecha es más vieja que los pedidos nuevos que entraron hoy, vuelve a la cabeza de la cola.
+Pedido rechazado por coordenadas inválidas (RN-05, PedidoService.reencolarAlFinal): Acá sí hacemos pedido.setUltimaActualizacionCola(Instant.now()) para mandarlo al fondo de la cola y evitar que trabe las próximas planificaciones.
+3. ¿Y qué rol cumplen CamioneroRemoto.java y PedidoRemoto.java?
+
+Acá está la distinción clave: CamioneroRemoto y PedidoRemoto NO viven en ms-camioneros ni en ms-pedidos, sino en ms-logistica (en la carpeta client).
+
+Como cada microservicio tiene su propia base de datos separada, ms-logistica no tiene acceso a las tablas Camionero ni Pedido.
+Entonces, cuando ms-logistica pide por HTTP la cola ya ordenada a ms-pedidos (GET /v1/pedidos/regiones/{id}/cola) y el primer chofer a ms-camioneros (GET /v1/camioneros/siguiente), recibe texto JSON por la red.
+PedidoRemoto.java y CamioneroRemoto.java son records de Java que representan ese JSON adentro de ms-logistica para que PlanificadorService pueda guardar la cola en un List<PedidoRemoto> cola y recorrerla con un for (PedidoRemoto pedido : cola).
+Patrón Tolerant Reader (Lector Tolerante): Fijate que ambos tienen la anotación @JsonIgnoreProperties(ignoreUnknown = true) de la librería Jackson. Eso significa que ms-logistica solo lee los campos que le importan para planificar (por ejemplo, de un pedido solo lee id, cantidadTachos, estado y las coordenadas de heladeria, ignorando fechaCreacion o el nombre de la región). Si mañana ms-pedidos agrega 10 campos nuevos a su respuesta JSON, ms-logistica no se rompe.
+4. Resumen de librerías usadas para esto (por si pregunta el profe)
+
+No usamos ninguna librería externa extraña; usamos las herramientas estándar del ecosistema Spring Boot:
+
+Spring Data JPA / Hibernate (@Query JPQL + PageRequest): Para armar y ordenar las colas FIFO directamente en PostgreSQL.
+java.time.Instant (JDK estándar): Para manejar las marcas de tiempo UTC con precisión de nanosegundos (ultimaActualizacionCola).
+Spring RestClient + Jackson (@JsonIgnoreProperties): En ms-logistica para pedir la cola por HTTP y convertirla en List<PedidoRemoto> y CamioneroRemoto.
+
+¿Te cerró perfecto cómo encajan la base de datos de cada servicio con los objetos *Remoto en logística? Si querés, contame cómo te fue con el cierre del viaje (PUT /v1/viajes/1/cierre) en Swagger UI.

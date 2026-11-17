@@ -7,6 +7,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import utn.fc.backend.pedidos.model.Ciudad;
+import utn.fc.backend.pedidos.model.EstadoPedido;
 import utn.fc.backend.pedidos.model.Heladeria;
 import utn.fc.backend.pedidos.model.Pedido;
 import utn.fc.backend.pedidos.model.Region;
@@ -19,12 +20,13 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Catálogo geográfico inicial (4 regiones, ciudades de Córdoba y heladerías con coordenadas reales)
- * más una tanda inicial de pedidos PENDIENTE en las 4 regiones para poder probar la planificación
- * desde el primer arranque.
+ * Catálogo geográfico inicial (4 regiones, ciudades de Córdoba y 37 heladerías con coordenadas reales)
+ * más una tanda abundante de 75 pedidos PENDIENTE distribuidos en las 4 regiones para poder planificar
+ * múltiples viajes seguidos por región desde el primer arranque.
  * <p>
- * Las primeras 17 heladerías (IDs 1..17) conservan su orden original para mantener compatibilidad
- * con la colección de Postman; las adicionales se agregan a continuación (IDs 18..29).
+ * Incluye auto-recarga inteligente: al iniciar ms-pedidos, revisa cuántos pedidos PENDIENTE quedan en
+ * cada región; si alguna región bajó de 6 pedidos PENDIENTE (porque ya fueron despachados en viajes),
+ * vuelve a poblar esa cola regional automáticamente.
  */
 @Component
 public class DataSeeder implements ApplicationRunner {
@@ -55,9 +57,10 @@ public class DataSeeder implements ApplicationRunner {
         if (heladeriaRepository.count() < 20) {
             sembrarSucursalesAdicionales();
         }
-        if (pedidoRepository.count() < 5) {
-            sembrarPedidosIniciales();
+        if (heladeriaRepository.count() < 35) {
+            sembrarSucursalesExtra();
         }
+        recargarColasPendientesSiHaceFalta();
     }
 
     private void sembrarCatalogoBase() {
@@ -150,65 +153,164 @@ public class DataSeeder implements ApplicationRunner {
         heladeria(villaGralBelgrano, "Heladería Centro Alpino VGB", "Av. Julio A. Roca 180", "-31.976500", "-64.558500");
         Ciudad carlota = ciudad(sur, "La Carlota");
         heladeria(carlota, "Heladería La Carlota Centro", "Av. Vélez Sarsfield 410", "-33.419000", "-63.297000");
+    }
 
-        log.info("Catálogo geográfico inicial cargado: {} regiones, {} ciudades, {} heladerías",
+    private void sembrarSucursalesExtra() {
+        List<Region> regiones = regionRepository.findAll();
+        if (regiones.size() < 4) {
+            return;
+        }
+        Region capital = regiones.get(0);
+        Region noroeste = regiones.get(1);
+        Region este = regiones.get(2);
+        Region sur = regiones.get(3);
+
+        // Extra CAPITAL (IDs 30..31)
+        Ciudad unquillo = ciudad(capital, "Unquillo");
+        heladeria(unquillo, "Heladería Unquillo Doble Avenida", "Av. San Martín 1500", "-31.231500", "-64.316000");
+        Ciudad calera = ciudad(capital, "La Calera");
+        heladeria(calera, "Heladería La Calera Centro", "Av. Vélez Sarsfield 550", "-31.343800", "-64.335200");
+
+        // Extra NOROESTE (IDs 32..33)
+        Ciudad capillaDelMonte = ciudad(noroeste, "Capilla del Monte");
+        heladeria(capillaDelMonte, "Heladería Calle Techada Capilla", "Diagonal Buenos Aires 180", "-30.858300", "-64.525600");
+        Ciudad minaClavero = ciudad(noroeste, "Mina Clavero");
+        heladeria(minaClavero, "Heladería Mina Clavero Centro", "Av. San Martín 1100", "-31.722500", "-65.004200");
+
+        // Extra ESTE (IDs 34..35)
+        Ciudad oliva = ciudad(este, "Oliva");
+        heladeria(oliva, "Heladería Oliva Ruta 9", "Bv. Rodolfo Moyano 320", "-32.041600", "-63.569800");
+        Ciudad oncativo = ciudad(este, "Oncativo");
+        heladeria(oncativo, "Heladería Oncativo Centro", "San Martín 740", "-31.912500", "-63.682200");
+
+        // Extra SUR (IDs 36..37)
+        Ciudad santaRosa = ciudad(sur, "Santa Rosa de Calamuchita");
+        heladeria(santaRosa, "Heladería Costanera Santa Rosa", "Libertad 240", "-32.069000", "-64.536000");
+        Ciudad almafuerte = ciudad(sur, "Almafuerte");
+        heladeria(almafuerte, "Heladería Lago Piedras Moras", "Av. Buenos Aires 410", "-32.192000", "-64.255000");
+
+        log.info("Catálogo geográfico ampliado: {} regiones, {} ciudades, {} heladerías",
                 regionRepository.count(), ciudadRepository.count(), heladeriaRepository.count());
     }
 
-    private void sembrarPedidosIniciales() {
-        List<Heladeria> todas = heladeriaRepository.findAll();
-        if (todas.size() < 17) {
+    /**
+     * Auto-recarga inteligente mirando SOLO los pedidos en estado PENDIENTE de cada región.
+     * Si una región tiene menos de 6 pedidos PENDIENTE, le siembra una tanda completa para que
+     * siempre se puedan planificar varios viajes seguidos al reiniciar ms-pedidos.
+     */
+    private void recargarColasPendientesSiHaceFalta() {
+        if (heladeriaRepository.count() < 29) {
             return;
         }
 
-        // Región 1 - CAPITAL (7 pedidos = 450 tachos: prueba corte de capacidad en camiones de 350 o 400)
-        pedido(1L, 70);   // Nueva Córdoba
-        pedido(2L, 60);   // Alta Córdoba
-        pedido(3L, 70);   // Cerro de las Rosas
-        pedido(4L, 65);   // Villa Allende
-        pedido(18L, 65);  // Barrio Güemes
-        pedido(19L, 60);  // Barrio General Paz
-        pedido(20L, 60);  // Mendiolaza
+        // Región 1 - CAPITAL (19 pedidos = 1.205 tachos -> alcanza para 3 viajes completos + sobrante para 422)
+        if (pedidoRepository.findCola(1L, EstadoPedido.PENDIENTE).size() < 6) {
+            // Tanda 1 (Viaje 1 con camión de 350 tachos -> lleva los primeros 5 = 330 tachos)
+            pedido(1L, 70);   // Nueva Córdoba
+            pedido(2L, 60);   // Alta Córdoba
+            pedido(3L, 70);   // Cerro de las Rosas
+            pedido(4L, 65);   // Villa Allende
+            pedido(18L, 65);  // Barrio Güemes
+            // Tanda 2 (Viaje 2 con camión de 400 tachos -> lleva 6 pedidos = 375 tachos)
+            pedido(19L, 60);  // Barrio General Paz
+            pedido(20L, 60);  // Mendiolaza
+            pedido(30L, 65);  // Unquillo
+            pedido(31L, 65);  // La Calera
+            pedido(1L, 65);   // Nueva Córdoba (refuerzo)
+            pedido(2L, 60);   // Alta Córdoba (refuerzo)
+            // Tanda 3 (Viaje 3 con camión de 450 tachos -> lleva 6 pedidos = 380 tachos)
+            pedido(3L, 70);   // Cerro de las Rosas (refuerzo)
+            pedido(18L, 60);  // Barrio Güemes (refuerzo)
+            pedido(4L, 65);   // Villa Allende (refuerzo)
+            pedido(19L, 65);  // Barrio General Paz (refuerzo)
+            pedido(20L, 60);  // Mendiolaza (refuerzo)
+            pedido(30L, 60);  // Unquillo (refuerzo)
+            // Remanente intencional (2 pedidos = 120 tachos < 280) para demostrar 422 en el 4to intento
+            pedido(31L, 60);  // La Calera (remanente)
+            pedido(1L, 60);   // Nueva Córdoba (remanente)
+            log.info("Cola PENDIENTE de Región 1 (CAPITAL) recargada");
+        }
 
-        // Región 2 - NOROESTE (7 pedidos = 445 tachos)
-        pedido(5L, 70);   // Jesús María
-        pedido(6L, 65);   // Villa Carlos Paz
-        pedido(21L, 60);  // Cosquín
-        pedido(22L, 60);  // La Falda
-        pedido(23L, 55);  // Colonia Caroya
-        pedido(7L, 75);   // Cruz del Eje
-        pedido(8L, 60);   // Deán Funes
+        // Región 2 - NOROESTE (18 pedidos = 1.145 tachos -> alcanza para 3 viajes completos + sobrante)
+        if (pedidoRepository.findCola(2L, EstadoPedido.PENDIENTE).size() < 6) {
+            pedido(5L, 70);   // Jesús María
+            pedido(6L, 65);   // Villa Carlos Paz
+            pedido(21L, 60);  // Cosquín
+            pedido(22L, 60);  // La Falda
+            pedido(23L, 55);  // Colonia Caroya
+            pedido(7L, 75);   // Cruz del Eje
+            pedido(8L, 60);   // Deán Funes
+            pedido(32L, 65);  // Capilla del Monte
+            pedido(33L, 70);  // Mina Clavero
+            pedido(6L, 65);   // Villa Carlos Paz (refuerzo)
+            pedido(21L, 65);  // Cosquín (refuerzo)
+            pedido(22L, 60);  // La Falda (refuerzo)
+            pedido(5L, 65);   // Jesús María (refuerzo)
+            pedido(23L, 60);  // Colonia Caroya (refuerzo)
+            pedido(32L, 65);  // Capilla del Monte (refuerzo)
+            pedido(8L, 65);   // Deán Funes (refuerzo)
+            pedido(7L, 60);   // Cruz del Eje (remanente)
+            pedido(33L, 60);  // Mina Clavero (remanente)
+            log.info("Cola PENDIENTE de Región 2 (NOROESTE) recargada");
+        }
 
-        // Región 3 - ESTE (8 pedidos = 480 tachos: distancias largas para probar capacidad y cadena de frío)
-        pedido(24L, 65);  // Arroyito
-        pedido(9L, 70);   // San Francisco
-        pedido(12L, 60);  // Las Varillas
-        pedido(25L, 60);  // Bell Ville
-        pedido(10L, 60);  // Marcos Juárez
-        pedido(26L, 55);  // Brinkmann
-        pedido(11L, 55);  // Morteros
-        pedido(9L, 55);   // San Francisco (2do pedido)
+        // Región 3 - ESTE (20 pedidos = 1.240 tachos -> distancias largas para probar RN-02 y RN-03 10h)
+        if (pedidoRepository.findCola(3L, EstadoPedido.PENDIENTE).size() < 6) {
+            pedido(24L, 65);  // Arroyito
+            pedido(9L, 70);   // San Francisco
+            pedido(12L, 60);  // Las Varillas
+            pedido(25L, 60);  // Bell Ville
+            pedido(10L, 60);  // Marcos Juárez
+            pedido(26L, 55);  // Brinkmann
+            pedido(11L, 55);  // Morteros
+            pedido(34L, 65);  // Oliva
+            pedido(35L, 65);  // Oncativo
+            pedido(9L, 60);   // San Francisco (refuerzo)
+            pedido(24L, 65);  // Arroyito (refuerzo)
+            pedido(12L, 65);  // Las Varillas (refuerzo)
+            pedido(25L, 60);  // Bell Ville (refuerzo)
+            pedido(10L, 65);  // Marcos Juárez (refuerzo)
+            pedido(34L, 60);  // Oliva (refuerzo)
+            pedido(35L, 60);  // Oncativo (refuerzo)
+            pedido(26L, 65);  // Brinkmann (refuerzo)
+            pedido(11L, 65);  // Morteros (refuerzo)
+            pedido(24L, 60);  // Arroyito (remanente)
+            pedido(9L, 60);   // San Francisco (remanente)
+            log.info("Cola PENDIENTE de Región 3 (ESTE) recargada");
+        }
 
-        // Región 4 - SUR (7 pedidos = 440 tachos)
-        pedido(27L, 65);  // Alta Gracia
-        pedido(28L, 60);  // Villa General Belgrano
-        pedido(16L, 65);  // Río Tercero
-        pedido(15L, 70);  // Villa María
-        pedido(13L, 60);  // Río Cuarto Centro
-        pedido(14L, 60);  // Río Cuarto Banda Norte
-        pedido(29L, 60);  // La Carlota
+        // Región 4 - SUR (18 pedidos = 1.145 tachos -> alcanza para 3 viajes completos + sobrante)
+        if (pedidoRepository.findCola(4L, EstadoPedido.PENDIENTE).size() < 6) {
+            pedido(27L, 65);  // Alta Gracia
+            pedido(28L, 60);  // Villa General Belgrano
+            pedido(16L, 65);  // Río Tercero
+            pedido(15L, 70);  // Villa María
+            pedido(13L, 60);  // Río Cuarto Centro
+            pedido(14L, 60);  // Río Cuarto Banda Norte
+            pedido(29L, 60);  // La Carlota
+            pedido(36L, 65);  // Santa Rosa de Calamuchita
+            pedido(37L, 65);  // Almafuerte
+            pedido(17L, 70);  // Laboulaye
+            pedido(27L, 60);  // Alta Gracia (refuerzo)
+            pedido(28L, 65);  // Villa General Belgrano (refuerzo)
+            pedido(16L, 65);  // Río Tercero (refuerzo)
+            pedido(15L, 65);  // Villa María (refuerzo)
+            pedido(13L, 65);  // Río Cuarto Centro (refuerzo)
+            pedido(36L, 65);  // Santa Rosa (refuerzo)
+            pedido(37L, 60);  // Almafuerte (remanente)
+            pedido(14L, 60);  // Río Cuarto Banda Norte (remanente)
+            log.info("Cola PENDIENTE de Región 4 (SUR) recargada");
+        }
 
-        log.info("Pedidos iniciales PENDIENTE sembrados: {} pedidos en total en las 4 regiones",
-                pedidoRepository.count());
+        log.info("Estado de pedidos iniciales listo (total en BD: {} pedidos)", pedidoRepository.count());
     }
 
     private Ciudad ciudad(Region region, String nombre) {
         return ciudadRepository.save(new Ciudad(region, nombre));
     }
 
-    private Heladeria heladeria(Ciudad ciudad, String nombre, String direccion, String lat, String lng) {
-        return heladeriaRepository.save(
-                new Heladeria(ciudad, nombre, direccion, new BigDecimal(lat), new BigDecimal(lng)));
+    private void heladeria(Ciudad ciudad, String nombre, String direccion, String lat, String lng) {
+        heladeriaRepository.save(new Heladeria(ciudad, nombre, direccion, new BigDecimal(lat), new BigDecimal(lng)));
     }
 
     private void pedido(Long idHeladeria, int cantidadTachos) {
