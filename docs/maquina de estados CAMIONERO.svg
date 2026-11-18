@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 719.2279999999998 298.70000000000005" width="719.2279999999998" height="298.70000000000005" style="--bg:#18181B;--fg:#F4F4F5;--line:#71717A;--muted:#A1A1AA;--surface:#27272A;--border:#3F3F46;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="_start" data-to="DISPONIBLE" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="POST /v1/camioneros
+(entra al final de la cola global FIFO)" points="126.5,115.20000000000002 126.5,209.8 296.74649999999997,209.8 296.74649999999997,221.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="DISPONIBLE" data-to="EN_VIAJE" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Asignado a viaje (PUT /v1/camioneros/{id}/estado)
+Requiere contratoActivo = true (RN-04)" points="356.2534999999999,221.8 356.2534999999999,209.8 559.6059999999999,209.8 559.6059999999999,151.20000000000002 460.66566666666654,151.20000000000002 460.66566666666654,76.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="EN_VIAJE" data-to="DISPONIBLE" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Cierre de viaje (PUT /v1/viajes/{id}/cierre)
+Actualiza ultimaActualizacionCola = now
+(pasa al final de la cola global FIFO)" points="425.44033333333323,76.9 425.44033333333323,112.9 326.5,112.9 326.5,221.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="_start" data-to="DISPONIBLE" data-label="POST /v1/camioneros
+(entra al final de la cola global FIFO)">
+  <rect x="36" y="158.20000000000002" width="180.99999999999997" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="126.49999999999999" y="180.50000000000003" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="126.49999999999999" dy="-3.3000000000000007">POST /v1/camioneros</tspan><tspan x="126.49999999999999" dy="14.3">(entra al final de la cola global FIFO)</tspan></text>
+</g>
+<g class="edge-label" data-from="DISPONIBLE" data-to="EN_VIAJE" data-label="Asignado a viaje (PUT /v1/camioneros/{id}/estado)
+Requiere contratoActivo = true (RN-04)">
+  <rect x="435.10599999999994" y="158.20000000000002" width="248.12199999999996" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="559.1669999999999" y="180.50000000000003" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="559.1669999999999" dy="-3.3000000000000007">Asignado a viaje (PUT /v1/camioneros/{id}/estado)</tspan><tspan x="559.1669999999999" dy="14.3">Requiere contratoActivo = true (RN-04)</tspan></text>
+</g>
+<g class="edge-label" data-from="EN_VIAJE" data-to="DISPONIBLE" data-label="Cierre de viaje (PUT /v1/viajes/{id}/cierre)
+Actualiza ultimaActualizacionCola = now
+(pasa al final de la cola global FIFO)">
+  <rect x="220.99999999999994" y="119.90000000000002" width="210.10599999999997" height="58.900000000000006" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="326.05299999999994" y="149.35000000000002" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="326.05299999999994" dy="-10.450000000000001">Cierre de viaje (PUT /v1/viajes/{id}/cierre)</tspan><tspan x="326.05299999999994" dy="14.3">Actualiza ultimaActualizacionCola = now</tspan><tspan x="326.05299999999994" dy="14.3">(pasa al final de la cola global FIFO)</tspan></text>
+</g>
+<g class="node" data-id="_start" data-label="" data-shape="state-start">
+  <circle cx="126.5" cy="101.20000000000002" r="12" fill="var(--_text)" stroke="none" />
+</g>
+<g class="node" data-id="DISPONIBLE" data-label="DISPONIBLE" data-shape="rounded">
+  <rect x="266.99299999999994" y="221.8" width="119.014" height="36.900000000000006" rx="6" ry="6" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="326.49999999999994" y="240.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">DISPONIBLE</text>
+</g>
+<g class="node" data-id="EN_VIAJE" data-label="EN_VIAJE" data-shape="rounded">
+  <rect x="390.2149999999999" y="40" width="105.67599999999999" height="36.900000000000006" rx="6" ry="6" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="443.0529999999999" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">EN_VIAJE</text>
+</g>
+</svg>
