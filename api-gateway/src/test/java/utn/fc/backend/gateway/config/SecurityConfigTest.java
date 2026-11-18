@@ -78,6 +78,9 @@ class SecurityConfigTest {
 
         @PutMapping("/v1/viajes/{id}/cierre")
         String cerrarViaje(@PathVariable String id) { return "ok"; }
+
+        @PostMapping({"/v1/pedidos/admin/reset", "/v1/camioneros/admin/reset", "/v1/viajes/admin/reset"})
+        String resetDatosPrueba() { return "ok"; }
     }
 
     private static SecurityMockServerConfigurers.JwtMutator como(String rol) {
@@ -184,6 +187,30 @@ class SecurityConfigTest {
                 .put().uri("/v1/pedidos/1/reencolado")
                 .exchange()
                 .expectStatus().isForbidden();
+    }
+
+    @Test
+    void resetDeDatosDePruebaSoloParaAdministrador() {
+        for (String uri : new String[]{"/v1/pedidos/admin/reset", "/v1/camioneros/admin/reset", "/v1/viajes/admin/reset"}) {
+            webClient.post().uri(uri)
+                    .exchange()
+                    .expectStatus().isUnauthorized();
+
+            webClient.mutateWith(como("Camionero"))
+                    .post().uri(uri)
+                    .exchange()
+                    .expectStatus().isForbidden();
+
+            webClient.mutateWith(como("ServicioInterno"))
+                    .post().uri(uri)
+                    .exchange()
+                    .expectStatus().isForbidden();
+
+            webClient.mutateWith(como("Administrador"))
+                    .post().uri(uri)
+                    .exchange()
+                    .expectStatus().isOk();
+        }
     }
 
     @Test

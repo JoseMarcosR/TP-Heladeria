@@ -36,3 +36,8 @@ management:
 springdoc:
   swagger-ui:
     persist-authorization: true
+
+# Endpoint POST /v1/.../admin/reset (soporte a pruebas de la colección Postman). Poner en false para deshabilitarlo.
+app:
+  datos-prueba:
+    reset-habilitado: ${DATOS_PRUEBA_RESET_HABILITADO:true}

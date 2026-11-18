@@ -197,8 +197,11 @@ public class DataSeeder implements ApplicationRunner {
      * Auto-recarga inteligente mirando SOLO los pedidos en estado PENDIENTE de cada región.
      * Si una región tiene menos de 6 pedidos PENDIENTE, le siembra una tanda completa para que
      * siempre se puedan planificar varios viajes seguidos al reiniciar ms-pedidos.
+     * <p>
+     * Es público porque también lo reutiliza {@code DatosPruebaService} para volver a cargar los pedidos de
+     * demo después de un reset (por ejemplo, al terminar la colección de Postman).
      */
-    private void recargarColasPendientesSiHaceFalta() {
+    public void recargarColasPendientesSiHaceFalta() {
         if (heladeriaRepository.count() < 29) {
             return;
         }

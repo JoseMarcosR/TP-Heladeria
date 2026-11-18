@@ -55,6 +55,10 @@ public class SecurityConfig {
                         .pathMatchers(HttpMethod.GET, "/v1/viajes/*").hasAnyRole(ADMIN, CAMIONERO)
                         .pathMatchers(HttpMethod.PUT, "/v1/viajes/*/cierre").hasRole(ADMIN)
 
+                        // Soporte a pruebas (colección Postman): resetear/re-sembrar datos. Solo Administrador.
+                        .pathMatchers(HttpMethod.POST, "/v1/pedidos/admin/reset", "/v1/camioneros/admin/reset",
+                                "/v1/viajes/admin/reset").hasRole(ADMIN)
+
                         .anyExchange().denyAll())
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveJwtAuthenticationConverter())))

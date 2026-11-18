@@ -158,13 +158,18 @@ hacia atrás desde ENTREGADO / NO_ENTREGADO) y reintentar dará `409` en ellos; 
 **Modo híbrido** (infra en Docker, servicios desde el IDE o con `mvn spring-boot:run`) o **modo integración** (todo en Docker):
 
 ```bash
-# Base limpia para que los escenarios de la colección sean deterministas
-docker compose down -v
 docker compose --profile apps up -d --build
 ```
 
 Importar en Postman `postman/Logistica-Helados-TPI.postman_collection.json` y `postman/Local-Env.postman_environment.json` y correr la
-colección completa con el Runner (01 → 04). Cubre ESC-01 a ESC-06 y CV-01 a CV-07 con `pm.test`. Las planificaciones reales requieren que `ms-logistica` llegue a OSRM (internet si se usa el servidor público).
+colección completa con el Runner (01 → 01b → 02 → 03 → 04 → 05). Cubre ESC-01 a ESC-06 y CV-01 a CV-07 con `pm.test`. Las planificaciones reales requieren que `ms-logistica` llegue a OSRM (internet si se usa el servidor público).
+
+**La colección es independiente del `DataSeeder`:** la carpeta `01b` llama a los endpoints de soporte a pruebas
+`POST /v1/viajes/admin/reset`, `POST /v1/pedidos/admin/reset?resembrar=false` y `POST /v1/camioneros/admin/reset?resembrar=false`
+(solo rol `Administrador`), que vacían viajes, colas regionales y cola FIFO global **conservando regiones, ciudades y heladerías**.
+Así los escenarios son deterministas aunque cambien los datos de demo, y la colección se puede correr varias veces seguidas sin
+`docker compose down -v`. La carpeta `05` (opcional) llama a los mismos endpoints con `resembrar=true` y deja otra vez cargados los
+pedidos y camioneros de demo para seguir probando en Swagger. Los endpoints se deshabilitan con `DATOS_PRUEBA_RESET_HABILITADO=false`.
 
 ## Tests
 

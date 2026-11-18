@@ -43,6 +43,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/viajes").hasRole(ADMIN)
                         .requestMatchers(HttpMethod.GET, "/v1/viajes/*").hasAnyRole(ADMIN, CAMIONERO)
                         .requestMatchers(HttpMethod.PUT, "/v1/viajes/*/cierre").hasRole(ADMIN)
+                        // Soporte a pruebas (Postman): borrar el historial de viajes. Solo Administrador.
+                        .requestMatchers(HttpMethod.POST, "/v1/viajes/admin/reset").hasRole(ADMIN)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))

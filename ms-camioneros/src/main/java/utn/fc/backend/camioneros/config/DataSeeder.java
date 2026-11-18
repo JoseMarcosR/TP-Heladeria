@@ -38,6 +38,30 @@ public class DataSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        sembrarFlotaDemo();
+
+        // Auto-recarga: si al reiniciar quedaron menos de 4 camioneros DISPONIBLES, libera a los que estaban EN_VIAJE
+        if (camioneroRepository.findCola(EstadoCamionero.DISPONIBLE, PageRequest.of(0, 10)).size() < 4) {
+            Instant finCola = Instant.now();
+            long offset = 1;
+            for (Camionero c : camioneroRepository.findAll()) {
+                if (c.isContratoActivo() && c.getEstado() == EstadoCamionero.EN_VIAJE) {
+                    c.setEstado(EstadoCamionero.DISPONIBLE);
+                    c.setUltimaActualizacionCola(finCola.plusSeconds(offset++));
+                }
+            }
+            log.info("Auto-recarga de flota: camioneros EN_VIAJE liberados nuevamente a DISPONIBLE");
+        }
+
+        log.info("Flota inicial lista: {} camioneros registrados en total", camioneroRepository.count());
+    }
+
+    /**
+     * Siembra los 16 camioneros de demo (los que ya existen por DNI/patente se saltean).
+     * Es público porque también lo reutiliza {@code DatosPruebaService} para volver a cargar la flota de demo
+     * después de un reset (por ejemplo, al terminar la colección de Postman).
+     */
+    public void sembrarFlotaDemo() {
         Instant base = Instant.now().minusSeconds(3600);
 
         // 1..6) Tanda original en orden de cola FIFO
@@ -61,21 +85,6 @@ public class DataSeeder implements ApplicationRunner {
         sembrar("43545556", "Facundo Nahuel Zárate", "3515100014", true, "AI550NN", 440, base.plusSeconds(130));
         sembrar("44656667", "Rodrigo Maximiliano Paz", "3515100015", true, "AJ660OO", 500, base.plusSeconds(140));
         sembrar("45767778", "Leandro Agustín Peralta", "3515100016", true, "AJ770PP", 390, base.plusSeconds(150));
-
-        // Auto-recarga: si al reiniciar quedaron menos de 4 camioneros DISPONIBLES, libera a los que estaban EN_VIAJE
-        if (camioneroRepository.findCola(EstadoCamionero.DISPONIBLE, PageRequest.of(0, 10)).size() < 4) {
-            Instant finCola = Instant.now();
-            long offset = 1;
-            for (Camionero c : camioneroRepository.findAll()) {
-                if (c.isContratoActivo() && c.getEstado() == EstadoCamionero.EN_VIAJE) {
-                    c.setEstado(EstadoCamionero.DISPONIBLE);
-                    c.setUltimaActualizacionCola(finCola.plusSeconds(offset++));
-                }
-            }
-            log.info("Auto-recarga de flota: camioneros EN_VIAJE liberados nuevamente a DISPONIBLE");
-        }
-
-        log.info("Flota inicial lista: {} camioneros registrados en total", camioneroRepository.count());
     }
 
     private void sembrar(String dni, String nombre, String telefono, boolean contratoActivo,

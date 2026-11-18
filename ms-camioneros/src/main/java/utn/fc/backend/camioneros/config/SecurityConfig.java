@@ -43,6 +43,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/v1/camioneros/siguiente").hasRole(SERVICIO)
                         .requestMatchers(HttpMethod.PUT, "/v1/camioneros/*/estado").hasAnyRole(ADMIN, SERVICIO)
                         .requestMatchers(HttpMethod.GET, "/v1/camiones/*").hasRole(SERVICIO)
+                        // Soporte a pruebas (Postman): vaciar/re-sembrar la flota. Solo Administrador.
+                        .requestMatchers(HttpMethod.POST, "/v1/camioneros/admin/reset").hasRole(ADMIN)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))

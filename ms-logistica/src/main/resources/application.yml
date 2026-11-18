@@ -74,3 +74,8 @@ logistica:
     token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8081/realms/heladeria/protocol/openid-connect/token}
     client-id: ${KEYCLOAK_CLIENT_ID:ms-logistica}
     client-secret: ${KEYCLOAK_CLIENT_SECRET:ms-logistica-secret}
+
+# Endpoint POST /v1/.../admin/reset (soporte a pruebas de la colección Postman). Poner en false para deshabilitarlo.
+app:
+  datos-prueba:
+    reset-habilitado: ${DATOS_PRUEBA_RESET_HABILITADO:true}

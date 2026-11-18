@@ -48,6 +48,8 @@ public class SecurityConfig {
                         // Interno: ms-logistica manda al final de la cola un pedido rechazado por coordenadas
                         // inválidas (RN-05). Solo ServicioInterno; el gateway no lo publica (allí cae en denyAll).
                         .requestMatchers(HttpMethod.PUT, "/v1/pedidos/*/reencolado").hasRole(SERVICIO)
+                        // Soporte a pruebas (Postman): vaciar/re-sembrar las colas regionales. Solo Administrador.
+                        .requestMatchers(HttpMethod.POST, "/v1/pedidos/admin/reset").hasRole(ADMIN)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
