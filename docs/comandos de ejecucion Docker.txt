@@ -1,0 +1,12 @@
+CMD abierto dentro del tp
+
+docker compose down -v
+docker compose --profile apps up -d --build
+docker compose ps
+
+http://localhost:8080/swagger-ui.html
+
+curl.exe -s -X POST http://localhost:8081/realms/heladeria/protocol/openid-connect/token -d grant_type=password -d client_id=heladeria-api -d username=admin -d password=admin123
+
+docker compose --profile apps down
+wsl --shutdown
